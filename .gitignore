@@ -10,6 +10,7 @@ venv/
 
 # Data (raw & large files)
 data/raw/
+data/processed/
 vector_store/
 
 # OS
