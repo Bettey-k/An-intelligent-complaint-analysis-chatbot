@@ -6,4 +6,10 @@ jupyter
 scikit-learn
 sentence-transformers
 faiss-cpu
-
+tqdm
+pyarrow
+transformers
+torch
+accelerate
+gradio
+markdown
