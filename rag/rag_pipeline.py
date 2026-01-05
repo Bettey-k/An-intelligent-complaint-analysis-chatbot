@@ -1,6 +1,6 @@
 # rag/rag_pipeline.py
-from retriever import Retriever
-from generator import Generator
+from .retriever import Retriever
+from .generator import Generator
 from typing import Dict, Any
 
 class RAGPipeline:
