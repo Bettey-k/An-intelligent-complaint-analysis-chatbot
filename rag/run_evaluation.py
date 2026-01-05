@@ -4,8 +4,8 @@ import time
 import pandas as pd
 from typing import Dict, Any
 from tqdm import tqdm
-from rag_pipeline import RAGPipeline
-from evaluation import RAGEvaluator, TEST_QUESTIONS
+from .rag_pipeline import RAGPipeline
+from .evaluation import RAGEvaluator, TEST_QUESTIONS
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 
 # Configure logging

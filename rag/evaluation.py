@@ -1,99 +1,68 @@
-# generator.py
-import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
-import logging
 from typing import List, Dict, Any
+import pandas as pd
+import logging
 
-class Generator:
-    def __init__(self, model_name: str = "mistralai/Mistral-7B-Instruct-v0.1"):
-        self.logger = self._setup_logging()
-        self.model_name = model_name
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.logger.info(f"Using device: {self.device}")
-        
+class RAGEvaluator:
+    def __init__(self, rag_pipeline):
+        self.rag = rag_pipeline
+        self.logger = logging.getLogger(__name__)
+
+    @staticmethod
+    def save_to_markdown(results, output_file: str) -> None:
+        """Save evaluation results to a markdown file."""
+        if isinstance(results, pd.DataFrame):
+            df = results
+        else:
+            df = pd.DataFrame(results)
+
+        with open(output_file, 'w', encoding='utf-8') as f:
+            f.write("# RAG Pipeline Evaluation Results\n\n")
+            f.write(df.to_markdown(index=False))
+
+    def evaluate_single(self, question: str) -> Dict[str, Any]:
         try:
-            self.logger.info(f"Loading {model_name}...")
-            self.tokenizer = AutoTokenizer.from_pretrained(
-                model_name,
-                trust_remote_code=True
-            )
-            
-            self.model = AutoModelForCausalLM.from_pretrained(
-                model_name,
-                device_map="auto",
-                torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
-                trust_remote_code=True
-            )
-            
-            self.pipeline = pipeline(
-                "text-generation",
-                model=self.model,
-                tokenizer=self.tokenizer,
-                device_map="auto"
-            )
-            self.logger.info(f"Successfully loaded {model_name}")
-            
+            response = self.rag.query(question)
+            sources = response.get("sources", [])[:2]
+            quality_score = self._calculate_initial_quality(response)
+
+            return {
+                "question": question,
+                "answer": response.get("answer", "No answer generated"),
+                "sources": sources,
+                "score": quality_score,
+                "analysis": "Auto-evaluated"
+            }
+
         except Exception as e:
-            self.logger.error(f"Error loading model: {str(e)}")
-            raise
+            self.logger.error(f"Error processing question: {str(e)}")
+            return {
+                "question": question,
+                "answer": f"Error: {str(e)}",
+                "sources": [],
+                "score": 0,
+                "analysis": f"Error: {str(e)[:100]}..."
+            }
 
-    def _setup_logging(self):
-        """Set up logging configuration."""
-        logger = logging.getLogger(__name__)
-        logger.setLevel(logging.INFO)
-        
-        # Create console handler
-        ch = logging.StreamHandler()
-        ch.setLevel(logging.INFO)
-        
-        # Create formatter
-        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-        ch.setFormatter(formatter)
-        
-        # Add handler to logger
-        logger.addHandler(ch)
-        
-        return logger
+    def _calculate_initial_quality(self, response: Dict[str, Any]) -> float:
+        answer = response.get("answer", "")
+        sources = response.get("sources", [])
 
-    def format_prompt(self, query: str, context: List[str]) -> str:
-        """Format the prompt for the model."""
-        context_str = "\n".join([f"- {c}" for c in context])
-        return f"""You are a helpful AI assistant. Answer the question based on the following context:
+        if not answer or "Error" in answer:
+            return 1.0
 
-Context:
-{context_str}
+        score = 0.5
+        if 20 < len(answer) < 500:
+            score += 0.2
+        if sources:
+            score += 0.3
 
-Question: {query}
+        return round(score * 5, 1)  # 1–5 scale
 
-Answer:"""
 
-    def generate_response(self, query: str, context: List[str], max_new_tokens: int = 100) -> str:
-        """Generate a response using the model."""
-        try:
-            prompt = self.format_prompt(query, context)
-            
-            # Generate response with explicit parameters
-            response = self.pipeline(
-                prompt,
-                max_new_tokens=min(max_new_tokens, 150),
-                max_length=4096,
-                temperature=0.7,
-                top_p=0.9,
-                do_sample=True,
-                return_full_text=False,
-                pad_token_id=self.tokenizer.eos_token_id,
-                truncation=True,
-                max_time=20
-            )
-            
-            # Clean up the response
-            if not response or not isinstance(response, list) or not response[0].get('generated_text'):
-                return "Error: Invalid response format from model"
-                
-            full_response = response[0]['generated_text']
-            answer = full_response.split("Answer:")[-1].strip()
-            return answer.split(self.tokenizer.eos_token or '')[0].strip()
-            
-        except Exception as e:
-            self.logger.error(f"Generation error: {str(e)}")
-            return f"Error generating response: {str(e)[:150]}"
+TEST_QUESTIONS = [
+    "What are the most common issues with credit cards?",
+    "How do customers typically report unauthorized transactions?",
+    "What are customers saying about late payment fees?",
+    "How do customers describe their experiences with customer service?",
+    "What issues do customers face with credit score reporting?"
+]
